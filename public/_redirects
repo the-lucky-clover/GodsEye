@@ -1,0 +1,4 @@
+# SPA catch-all: serve index.html for every unmatched path so that if
+# the app ever gains client-side routes they work after a hard refresh.
+# API routes are handled by Pages Functions in functions/ and take priority.
+/*    /index.html    200
