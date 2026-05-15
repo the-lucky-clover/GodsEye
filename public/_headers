@@ -1,0 +1,20 @@
+# Cloudflare Pages HTTP response headers
+# https://developers.cloudflare.com/pages/platform/headers/
+
+# Hashed JS/CSS assets emitted by Vite can be cached indefinitely
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# index.html: no-cache so browsers always re-validate
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+# Security headers applied to every response
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()

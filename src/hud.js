@@ -15,7 +15,7 @@ let currentShaders = null
 let _airTrackListener = null
 let _airTrackEntity   = null
 
-export function initHUD({ viewer, shaders, satellites, aircraft, cctv }) {
+export function initHUD({ viewer, shaders, satellites, aircraft, shipping, cctv }) {
   currentViewer  = viewer
   currentShaders = shaders
 
@@ -31,6 +31,7 @@ export function initHUD({ viewer, shaders, satellites, aircraft, cctv }) {
   // ── Layer toggles ────────────────────────────────────────────────────────
   document.getElementById('toggle-satellites').addEventListener('change', e => satellites.setVisible(e.target.checked))
   document.getElementById('toggle-aircraft').addEventListener('change',  e => aircraft.setVisible(e.target.checked))
+  document.getElementById('toggle-shipping').addEventListener('change',  e => shipping.setVisible(e.target.checked))
   document.getElementById('toggle-cctv').addEventListener('change',      e => cctv.setVisible(e.target.checked))
   document.getElementById('toggle-traffic').addEventListener('change',   e => {
     e.target.checked ? initVehicleParticles(viewer) : destroyVehicleParticles(viewer)
@@ -43,6 +44,7 @@ export function initHUD({ viewer, shaders, satellites, aircraft, cctv }) {
     shaders.setGodMode(godModeActive)
     satellites.setGodMode(godModeActive)
     aircraft.setGodMode(godModeActive)
+    shipping.setGodMode(godModeActive)
     document.body.classList.toggle('god-mode', godModeActive)
   })
 
@@ -90,10 +92,69 @@ export function initHUD({ viewer, shaders, satellites, aircraft, cctv }) {
   setInterval(() => {
     document.getElementById('sat-count').textContent  = satellites.getCount()
     document.getElementById('air-count').textContent  = aircraft.getCount()
+    document.getElementById('ship-count').textContent = shipping.getCount()
     document.getElementById('cctv-count').textContent = cctv.getCount()
   }, 5000)
   document.getElementById('sat-count').textContent  = satellites.getCount()
   document.getElementById('cctv-count').textContent = cctv.getCount()
+
+  // ── Agentic AI analysis ───────────────────────────────────────────────────
+  const analyzeBtn  = document.getElementById('analyze-btn')
+  const agentResult = document.getElementById('agent-result')
+  const agentPanel  = document.getElementById('agent-panel')
+
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener('click', async () => {
+      analyzeBtn.disabled    = true
+      analyzeBtn.textContent = '⬡ ANALYZING...'
+      agentResult.textContent = '▸ DISPATCHING OSINT AGENT...'
+      agentPanel.classList.add('active')
+
+      try {
+        const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(viewer.camera.position)
+        const viewport = {
+          lat:    Cesium.Math.toDegrees(carto?.latitude  ?? 0),
+          lon:    Cesium.Math.toDegrees(carto?.longitude ?? 0),
+          alt_km: ((carto?.height ?? 0) / 1000),
+        }
+
+        const res = await fetch('/api/agent', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            query:      'Analyze the current global OSINT picture. Identify the most significant activity patterns, anomalies, and any potential threats.',
+            aircraft:   aircraft.getAircraft(),
+            vessels:    shipping.getVessels(),
+            satellites: satellites.getNames(),
+            viewport,
+          }),
+        })
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const { report, actions_taken, entity_count } = await res.json()
+
+        const toolsUsed = actions_taken?.length
+          ? `\n▸ TOOLS: ${actions_taken.map(a => a.split('(')[0]).join(', ')}`
+          : ''
+        const counts = entity_count
+          ? `\n▸ ${entity_count.aircraft} aircraft · ${entity_count.vessels} vessels · ${entity_count.satellites} satellites`
+          : ''
+
+        agentResult.textContent = `▸ AGENT REPORT\n${report}${counts}${toolsUsed}`
+      } catch (e) {
+        agentResult.textContent = `▸ AGENT FAILED: ${e.message}`
+      } finally {
+        analyzeBtn.disabled    = false
+        analyzeBtn.textContent = '⬡ AI AGENT ANALYZE'
+      }
+    })
+
+    // Close agent panel
+    document.getElementById('agent-close')?.addEventListener('click', () => {
+      agentPanel.classList.remove('active')
+      agentResult.textContent = ''
+    })
+  }
 }
 
 // ── Selection / tracking ─────────────────────────────────────────────────────

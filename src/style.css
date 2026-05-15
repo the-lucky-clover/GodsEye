@@ -302,6 +302,85 @@ html, body {
   pointer-events: none;
 }
 
+/* ===== AGENT AI PANEL ===== */
+#agent-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  width: 260px;
+  backdrop-filter: blur(4px);
+  position: relative;  /* needed for close button absolute positioning */
+}
+
+#analyze-btn {
+  width: 100%;
+  background: rgba(0, 180, 255, 0.08);
+  border: 1px solid rgba(0, 180, 255, 0.5);
+  color: #00b4ff;
+  font-family: var(--font);
+  font-size: 11px;
+  letter-spacing: 2px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 0;
+  text-shadow: 0 0 8px #00b4ff;
+}
+
+#analyze-btn:hover:not(:disabled) {
+  background: rgba(0, 180, 255, 0.18);
+  box-shadow: 0 0 15px rgba(0, 180, 255, 0.4);
+}
+
+#analyze-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+#agent-result {
+  margin-top: 8px;
+  font-size: 9px;
+  color: var(--green-dim);
+  line-height: 1.7;
+  letter-spacing: 0.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#agent-result:not(:empty) {
+  padding: 6px 0;
+  border-top: 1px solid rgba(0, 180, 255, 0.2);
+  color: #00ccff;
+}
+
+#agent-panel.active {
+  border-color: rgba(0, 180, 255, 0.6);
+  box-shadow: 0 0 10px rgba(0, 180, 255, 0.15);
+}
+
+#agent-panel.active #agent-close {
+  display: block !important;
+}
+
+.agent-close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: rgba(0, 180, 255, 0.4);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font);
+  padding: 0;
+}
+
+.agent-close-btn:hover {
+  color: #00b4ff;
+}
+
 /* ===== VISION MODE CLASSES (applied to body) ===== */
 
 /* Night Vision */

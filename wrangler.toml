@@ -1,0 +1,67 @@
+# God's Eye — Cloudflare Pages + Workers configuration
+# https://developers.cloudflare.com/pages/functions/wrangler-configuration/
+#
+# SETUP STEPS
+# ───────────────────────────────────────────────────────────────────────────────
+# 1.  wrangler pages project create godseye
+# 2.  wrangler d1 create godseye-db
+#     → paste the returned database_id into [[d1_databases]] below
+# 3.  wrangler d1 execute godseye-db --file schema.sql --remote
+# 4.  wrangler r2 bucket create godseye-assets
+# 5.  wrangler kv:namespace create TLE_CACHE
+#     → paste the returned id into [[kv_namespaces]] id field below
+# 6.  wrangler kv:namespace create CONFIG
+#     → paste the returned id into [[kv_namespaces]] id field below
+# 7.  Set runtime secrets (see README.md § API Keys for where to obtain them):
+#       wrangler secret put AISSTREAM_KEY
+#       wrangler secret put OPENSKY_USERNAME   (optional — raises rate limit)
+#       wrangler secret put OPENSKY_PASSWORD   (optional)
+# 8.  Set build-time env vars in CF Pages dashboard → Settings → Environment Variables:
+#       VITE_GOOGLE_MAPS_KEY
+#       VITE_CESIUM_TOKEN
+# ───────────────────────────────────────────────────────────────────────────────
+
+name                    = "godseye"
+compatibility_date      = "2024-09-23"
+pages_build_output_dir  = "dist"
+
+# ── Workers AI (Phase 7) ──────────────────────────────────────────────────────
+# Powers /api/agent (agentic OSINT coordinator), /api/analyze,
+# and real-time anomaly enrichment in /api/aircraft and /api/shipping.
+# No cost configuration needed — Workers AI is available on the free tier.
+[ai]
+binding = "AI"
+
+# ── KV Namespaces (Phase 5) ───────────────────────────────────────────────────
+# TLE_CACHE: caches active.tle text at the edge (1-hour TTL)
+# CONFIG:    runtime kill-switches and tuning knobs (e.g. max_sats, opensky_enabled)
+#
+# Run `wrangler kv:namespace create TLE_CACHE` and paste the id below.
+[[kv_namespaces]]
+binding = "TLE_CACHE"
+id      = "TODO_REPLACE_WITH_KV_NAMESPACE_ID"
+
+[[kv_namespaces]]
+binding = "CONFIG"
+id      = "TODO_REPLACE_WITH_CONFIG_KV_NAMESPACE_ID"
+
+# ── D1 Database (Phase 3) ─────────────────────────────────────────────────────
+# Persistent TLE record store so the app keeps serving data during
+# CelesTrak outages.  Also used by /api/shipping for vessel snapshots.
+#
+# Run `wrangler d1 create godseye-db` and paste the database_id below.
+[[d1_databases]]
+binding       = "DB"
+database_name = "godseye-db"
+database_id   = "TODO_REPLACE_WITH_D1_DATABASE_ID"
+
+# ── R2 Object Storage (Phase 4) ──────────────────────────────────────────────
+# Self-host Cesium static assets so the deployment doesn't depend on cesium.com.
+# After creating the bucket, upload assets once:
+#   npx wrangler r2 object put godseye-assets/cesium/ \
+#     --file node_modules/cesium/Build/Cesium/ --recursive
+# Then update vite.config.js cesiumBaseUrl to:
+#   https://pub-<account>.r2.dev/cesium/
+[[r2_buckets]]
+binding     = "ASSETS"
+bucket_name = "godseye-assets"

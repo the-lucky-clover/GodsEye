@@ -2,9 +2,7 @@ import * as Cesium from 'cesium'
 import * as satellite from 'satellite.js'
 import { satelliteIcon } from './icons.js'
 
-const ACTIVE_TLE_URL =
-  'https://api.allorigins.win/raw?url=' +
-  encodeURIComponent('https://celestrak.org/pub/TLE/active.tle')
+const ACTIVE_TLE_URL = '/api/tle'
 
 const UPDATE_INTERVAL_MS = 10_000
 const MAX_SATS = 100  // performance cap
@@ -192,6 +190,7 @@ export async function initSatellites(viewer) {
 
   return {
     getCount:   () => satMap.size,
+    getNames:   () => [...satMap.keys()],
     setVisible: (v) => satMap.forEach(({ entity }) => (entity.show = v)),
     setGodMode: (active) => {
       godModeActive = active

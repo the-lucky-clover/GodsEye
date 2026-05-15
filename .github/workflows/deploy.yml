@@ -1,0 +1,67 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write   # allows wrangler-action to post preview URL comment
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          # VITE_* vars are baked into the bundle at build time.
+          # Set these as repository secrets or CF Pages env vars.
+          # In CI they must be provided as GitHub Actions secrets.
+          VITE_GOOGLE_MAPS_KEY: ${{ secrets.VITE_GOOGLE_MAPS_KEY }}
+          VITE_CESIUM_TOKEN:    ${{ secrets.VITE_CESIUM_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken:     ${{ secrets.CF_API_TOKEN }}
+          accountId:    ${{ secrets.CF_ACCOUNT_ID }}
+          command:      pages deploy dist --project-name=godseye
+          gitHubToken:  ${{ secrets.GITHUB_TOKEN }}
+
+  # Apply D1 migrations only when merging to main (not on PRs)
+  migrate-d1:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken:  ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command:   d1 execute godseye-db --file schema.sql --remote
