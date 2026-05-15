@@ -130,7 +130,9 @@ async function collectFromAISStream(apiKey) {
             done()
           }
         }
-      } catch { /* skip malformed messages */ }
+      } catch (e) {
+        console.debug('[Shipping] Skipping malformed AIS message:', e.message)
+      }
     })
 
     ws.addEventListener('error', () => {

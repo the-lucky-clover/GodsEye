@@ -51,6 +51,7 @@ export function initHUD({ viewer, shaders, satellites, aircraft, shipping, cctv 
   // ── Entity selection → auto-track + info panel ──────────────────────────
   viewer.selectedEntityChanged.addEventListener(entity => {
     if (!entity || !entity.properties?.type?.getValue()) {
+      // Clicked empty space — deselect everything
       deselect(viewer, shaders)
       return
     }
