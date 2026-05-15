@@ -96,7 +96,40 @@ export function cctvIcon(god = false) {
   </svg>`)
 }
 
-/** Vehicle (top-down car silhouette) */
+/** Commercial vessel (top-down hull silhouette) */
+export function shipIcon(god = false) {
+  const fill   = god ? '#ff8800' : '#00ccff'
+  const stroke = god ? '#ff4400' : '#0088cc'
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+    <!-- Hull (pointed bow at top = heading 0°) -->
+    <polygon points="14,2 19,8 20,24 14,26 8,24 8,8" fill="${fill}" stroke="${stroke}" stroke-width="1"/>
+    <!-- Superstructure block -->
+    <rect x="11" y="11" width="6" height="8" rx="1" fill="${stroke}" opacity="0.8"/>
+    <!-- Bridge windows -->
+    <rect x="12" y="12" width="4" height="2" rx="0.5" fill="${fill}" opacity="0.6"/>
+    <!-- Bow tip detail -->
+    <line x1="14" y1="2" x2="14" y2="8" stroke="${stroke}" stroke-width="0.8"/>
+  </svg>`)
+}
+
+/** Military warship / naval vessel top-down silhouette */
+export function warshipIcon(god = false) {
+  const fill   = god ? '#ff2222' : '#8888ff'
+  const stroke = god ? '#ff0000' : '#4444cc'
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+    <!-- Narrow military hull (pointed bow + stern) -->
+    <polygon points="14,2 18,7 19,22 14,26 9,22 9,7" fill="${fill}" stroke="${stroke}" stroke-width="1"/>
+    <!-- Main gun turret -->
+    <circle cx="14" cy="10" r="2.5" fill="${stroke}"/>
+    <rect   x="13.5" y="4" width="1" height="6" fill="${stroke}"/>
+    <!-- Superstructure -->
+    <rect x="12" y="14" width="4" height="5" rx="0.5" fill="${stroke}" opacity="0.9"/>
+    <!-- Mast -->
+    <line x1="14" y1="8" x2="14" y2="2" stroke="${stroke}" stroke-width="0.7"/>
+  </svg>`)
+}
+
+
 export function vehicleIcon() {
   return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">
     <!-- Body -->

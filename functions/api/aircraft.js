@@ -121,7 +121,7 @@ export async function onRequest(ctx) {
   const cached = await cache.match(cacheKey)
   if (cached) return cached
 
-  let aircraft
+  let aircraft  // eslint-disable-line prefer-const — reassigned by AI enrichment below
   try {
     aircraft = await fetchOpenSky(ctx.env)
     console.log(`[Aircraft] OpenSky: ${aircraft.length} aircraft`)
@@ -129,6 +129,48 @@ export async function onRequest(ctx) {
     console.warn('[Aircraft] OpenSky unavailable, falling back to airplanes.live:', e.message)
     aircraft = await fetchAirplanesLive()
     console.log(`[Aircraft] airplanes.live: ${aircraft.length} aircraft`)
+  }
+
+  // ── Workers AI anomaly enrichment ────────────────────────────────────────
+  // Only triggered when emergency squawk codes are present (7500 hijack,
+  // 7600 comms failure, 7700 general emergency) to stay within free-tier
+  // AI neuron budget. Runs after data fetch, before caching.
+  const emergencies = aircraft.filter(ac => ['7500', '7600', '7700'].includes(ac.squawk))
+  if (emergencies.length > 0 && ctx.env.AI) {
+    try {
+      const aiResult = await ctx.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an air traffic intelligence system. Respond with only valid JSON.',
+          },
+          {
+            role: 'user',
+            content:
+              'Aircraft with emergency transponder codes detected. For each provide an 8-word tactical assessment. ' +
+              'Input: ' + JSON.stringify(
+                emergencies.map(a => ({
+                  callsign: a.callsign, squawk: a.squawk,
+                  alt_ft: Math.round(a.altFt), speed_kts: Math.round(a.speedKts),
+                }))
+              ) + '. ' +
+              'Respond ONLY with a JSON array: [{"callsign":"...","ai_assessment":"..."}]',
+          },
+        ],
+        max_tokens: 200,
+      })
+      try {
+        const parsed = JSON.parse(aiResult.response.match(/\[[\s\S]*\]/)?.[0] || '[]')
+        const assessMap = new Map(parsed.map(a => [a.callsign, a.ai_assessment]))
+        aircraft = aircraft.map(ac =>
+          assessMap.has(ac.callsign)
+            ? { ...ac, ai_assessment: assessMap.get(ac.callsign), ai_flagged: true }
+            : ac
+        )
+      } catch { /* ignore JSON parse errors — enrichment is non-critical */ }
+    } catch (e) {
+      console.warn('[Aircraft] AI enrichment failed:', e.message)
+    }
   }
 
   const response = new Response(JSON.stringify(aircraft), {

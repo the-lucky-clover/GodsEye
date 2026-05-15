@@ -2,31 +2,22 @@ import * as Cesium from 'cesium'
 import { aircraftIcon, militaryIcon } from './icons.js'
 
 /**
- * Aircraft tracking — OpenSky Network (primary) + airplanes.live (fallback).
+ * Aircraft tracking — powered by the /api/aircraft Worker.
  *
- * OpenSky provides global ADS-B data including military aircraft, no auth required.
- * Anonymous rate limit: 1 request / 10 s — we poll every 15 s so we're safe.
- * Falls back to airplanes.live (3 regional parallel fetches) on HTTP 429 / error.
+ * The Worker handles source selection (OpenSky Network primary, airplanes.live
+ * fallback), caching, and Workers AI anomaly enrichment for emergency squawks.
+ * This module only manages Cesium entity rendering and camera tracking.
  *
- * OpenSky state array indices:
- *   [0] icao24   [1] callsign  [5] lon       [6] lat
- *   [7] baro_alt(m) [8] on_ground [9] velocity(m/s)
- *   [10] true_track(°) [11] vertical_rate(m/s)
- *   [13] geo_altitude(m)  [14] squawk
+ * Normalised aircraft object shape (see functions/api/aircraft.js):
+ *   icao24, callsign, lon, lat, altM, altFt, onGround,
+ *   speedKts, heading, vertRate, squawk, type, desc, category,
+ *   ai_flagged?, ai_assessment?
  */
 
-const OPENSKY_URL = 'https://opensky-network.org/api/states/all'
-const ALT_BASE    = 'https://api.airplanes.live/v2/point'
-const ALT_REGIONS = [
-  { lat: 35,  lon: -90,  r: 3000 },   // Americas
-  { lat: 48,  lon: 15,   r: 3000 },   // Europe + Africa
-  { lat: 20,  lon: 115,  r: 3000 },   // Asia-Pacific
-]
-
+const AIRCRAFT_API       = '/api/aircraft'
 const UPDATE_INTERVAL_MS = 15_000
-const MAX_RENDER         = 6000  // OpenSky returns ~7-10k aircraft globally; render all of them
+const MAX_RENDER         = 6000
 const MAX_TRAIL_PTS      = 4
-const FT_TO_M            = 0.3048
 
 const aircraftMap     = new Map()   // icao24 → { entity }
 const positionHistory = new Map()   // icao24 → Cartesian3[]
@@ -36,123 +27,26 @@ let godModeActive = false
 let lastStates    = []
 let isVisible     = true
 
-// ── Parsing ───────────────────────────────────────────────────────────────────
-
-function parseOpenSky(st) {
-  const icao24   = st[0] || ''
-  const callsign = (st[1] || icao24).trim()
-  const lon      = st[5]
-  const lat      = st[6]
-  const altM     = st[13] ?? st[7] ?? 0    // geo_altitude preferred, baro fallback
-  const onGround = st[8] === true
-  const speedMs  = st[9] || 0
-  const heading  = st[10] || 0
-  const vertRate = st[11] || 0
-  const squawk   = (st[14] || '').toString()
-
-  return {
-    icao24, callsign, lon, lat,
-    altM, altFt: altM * 3.28084,
-    onGround,
-    speedKts: speedMs * 1.944,
-    heading, vertRate, squawk,
-    type: '', desc: '', category: '',
-  }
-}
-
-function parseAL(ac) {
-  const altFt = ac.alt_geom ?? ac.alt_baro ?? 0
-  return {
-    icao24:   ac.hex,
-    callsign: (ac.flight || ac.hex || '').trim(),
-    category: ac.category || '',
-    lon:      ac.lon,
-    lat:      ac.lat,
-    altFt,
-    altM:     altFt * FT_TO_M,
-    onGround: (ac.alt_baro != null && ac.alt_baro < 50),
-    speedKts: ac.gs || 0,
-    heading:  ac.track || 0,
-    vertRate: (ac.geom_rate || 0) * FT_TO_M / 60,
-    squawk:   ac.squawk || '',
-    type:     ac.t || '',
-    desc:     ac.desc || '',
-    category: ac.category || '',
-  }
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isMilitary(ac) {
-  return ac.category === 'C7' ||
-    ['7500', '7600', '7700'].includes(ac.squawk) ||
-    /^(RCH|JAKE|DARK|STING|GHOST|VIPER|HOOK|IRON|SWORD|VALOR|REACH|SPAR|EXEC|MAGIC|TITAN|FURY|HAWK|EAGLE|FALCON|RAVEN|WOLF)/
-      .test(ac.callsign.toUpperCase())
-}
-
-// ── Fetch ─────────────────────────────────────────────────────────────────────
-
-async function fetchOpenSky() {
-  const res = await fetch(OPENSKY_URL, {
-    headers: { Accept: 'application/json' },
-    cache:   'no-store',
-  })
-  if (res.status === 429) throw Object.assign(new Error('Rate limited'), { code: 429 })
-  if (!res.ok)            throw new Error(`OpenSky HTTP ${res.status}`)
-  const data = await res.json()
-  return (data.states || [])
-    .map(parseOpenSky)
-    .filter(ac => ac.lon != null && ac.lat != null && !ac.onGround && ac.altM > 30)
-}
-
-async function fetchAirplanesLive() {
-  const results = await Promise.allSettled(
-    ALT_REGIONS.map(({ lat, lon, r }) =>
-      fetch(`${ALT_BASE}/${lat}/${lon}/${r}`, {
-        headers: { Accept: 'application/json' },
-        cache:   'no-store',
-      })
-        .then(res => res.ok ? res.json() : Promise.reject(new Error(`AL ${res.status}`)))
-        .then(d => (d.ac || []).map(parseAL))
-    )
+  const cat = (ac.category || '').toUpperCase()
+  const cs  = (ac.callsign  || '').toUpperCase()
+  return (
+    ac.squawk === '7777' ||
+    cat === 'A5' ||
+    /^(RCH|REACH|JAKE|DOOM|EVIL|GTMO|GHOST|REAPER|PREDATOR|GRIM|COBRA|VIPER|EAGLE|HAWK|FALCON)/.test(cs)
   )
-  // Round-robin interleave so no single region dominates the front of the list.
-  // Without this, Americas fills first and any cap cuts off Europe/Asia entirely.
-  const arrs = results.filter(r => r.status === 'fulfilled').map(r => r.value)
-  const seen = new Set()
-  const all  = []
-  const maxLen = Math.max(...arrs.map(a => a.length), 0)
-  for (let i = 0; i < maxLen; i++) {
-    for (const arr of arrs) {
-      if (i >= arr.length) continue
-      const ac = arr[i]
-      if (!seen.has(ac.icao24)) { seen.add(ac.icao24); all.push(ac) }
-    }
-  }
-  return all.filter(ac => ac.lon != null && ac.lat != null && !ac.onGround)
 }
 
-async function fetchAllAircraft() {
-  try {
-    const list = await fetchOpenSky()
-    console.log(`[Aircraft] OpenSky: ${list.length} aircraft (global)`)
-    return list
-  } catch (e) {
-    console.warn('[Aircraft] OpenSky unavailable, falling back to airplanes.live:', e.message)
-    const list = await fetchAirplanesLive()
-    console.log(`[Aircraft] airplanes.live: ${list.length} aircraft`)
-    return list
-  }
+function headingToRotation(deg) {
+  return Cesium.Math.toRadians(-deg)
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
-function headingToRotation(deg) {
-  return Cesium.Math.toRadians(-deg) // Cesium CCW; icon points up = North
-}
-
 function updateAircraft(viewer, rawList) {
   const activeIds = new Set()
-  // No geographic slice — render everything returned (OpenSky ~9k, airplanes.live ~8k).
-  // The cap constant is kept for reference but not enforced; Cesium handles the volume.
   const visible   = rawList.length > MAX_RENDER ? rawList.slice(0, MAX_RENDER) : rawList
 
   visible.forEach(s => {
@@ -207,15 +101,16 @@ function updateAircraft(viewer, rawList) {
           show: godModeActive,
         },
         properties: {
-          type:     mil ? 'military_aircraft' : 'aircraft',
-          callsign: s.callsign,
-          aircraft: s.desc || s.type || '--',
-          altitude: `${Math.round(s.altFt).toLocaleString()} ft (${Math.round(altM)} m)`,
-          speed:    `${Math.round(s.speedKts)} kts`,
-          heading:  `${Math.round(s.heading)}°`,
-          vertRate: `${s.vertRate.toFixed(1)} m/s`,
-          squawk:   s.squawk || '--',
-          icao24:   s.icao24,
+          type:          mil ? 'military_aircraft' : 'aircraft',
+          callsign:      s.callsign,
+          aircraft:      s.desc || s.type || '--',
+          altitude:      `${Math.round(s.altFt).toLocaleString()} ft (${Math.round(altM)} m)`,
+          speed:         `${Math.round(s.speedKts)} kts`,
+          heading:       `${Math.round(s.heading)}°`,
+          vertRate:      `${s.vertRate.toFixed(1)} m/s`,
+          squawk:        s.squawk || '--',
+          icao24:        s.icao24,
+          ...(s.ai_assessment ? { ai_assessment: s.ai_assessment } : {}),
         },
       })
       aircraftMap.set(s.icao24, { entity })
@@ -229,6 +124,14 @@ function updateAircraft(viewer, rawList) {
       positionHistory.delete(id)
     }
   }
+}
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
+
+async function fetchAllAircraft() {
+  const res = await fetch(AIRCRAFT_API)
+  if (!res.ok) throw new Error(`/api/aircraft HTTP ${res.status}`)
+  return res.json()
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -250,6 +153,8 @@ export async function initAircraft(viewer) {
   return {
     getCount:   () => aircraftMap.size,
     getTrails:  () => positionHistory,
+    /** Returns normalised aircraft array for the AI agent */
+    getAircraft: () => lastStates,
     setVisible: (v) => {
       isVisible = v
       aircraftMap.forEach(({ entity }) => (entity.show = v))
@@ -266,3 +171,5 @@ export async function initAircraft(viewer) {
     },
   }
 }
+
+

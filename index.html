@@ -43,6 +43,11 @@
           <span class="layer-count" id="air-count">0</span>
         </label>
         <label class="layer-toggle">
+          <input type="checkbox" id="toggle-shipping" checked />
+          <span>VESSELS (AIS)</span>
+          <span class="layer-count" id="ship-count">0</span>
+        </label>
+        <label class="layer-toggle">
           <input type="checkbox" id="toggle-traffic" />
           <span>VEHICLES (OSM)</span>
         </label>
@@ -56,6 +61,13 @@
       <!-- God Mode -->
       <div id="god-mode-panel">
         <button id="god-mode-btn">&#x2B21; GOD MODE</button>
+      </div>
+
+      <!-- Agentic AI analysis panel -->
+      <div id="agent-panel">
+        <button id="analyze-btn">&#x2B21; AI AGENT ANALYZE</button>
+        <div id="agent-result"></div>
+        <button id="agent-close" class="agent-close-btn" style="display:none">&#x2715;</button>
       </div>
 
       <!-- Info panel for selected entity -->

@@ -1,7 +1,5 @@
 import { defineConfig } from 'vite'
 import cesium from 'vite-plugin-cesium'
-import { rm } from 'fs/promises'
-import path from 'path'
 
 // Must match the "cesium" package version in package.json.
 // Bump this string whenever the cesium dependency is upgraded.
@@ -14,28 +12,18 @@ export default defineConfig(({ command }) => ({
     // <script src> / <link href> tags, and copies Cesium static assets into dist/.
     cesium(),
 
-    // Production only: redirect Cesium assets to the public CDN so the dist/
-    // directory stays small for Cloudflare Pages free-tier deployment.
-    // vite-plugin-cesium still copies assets locally in closeBundle(); this
-    // companion plugin rewrites the injected HTML tags and then deletes the copy.
+    // Production only: rewrite the injected HTML tags to load Cesium from the
+    // CDN instead of the local /cesium/ sub-path.  The local copy is removed
+    // by the `postbuild` npm script (package.json) which runs after vite build
+    // completes all its closeBundle hooks — guaranteeing the copy is done before
+    // we delete it, and keeping dist/ well under Cloudflare Pages free-tier limits.
     command === 'build' && {
       name: 'cesium-cdn-redirect',
       enforce: 'post',
-
-      // Rewrite the <script src> and <link href> injected by vite-plugin-cesium
-      // to point at the CDN rather than the local /cesium/ sub-path.
       transformIndexHtml(html) {
         return html
-          .replace('/cesium/Cesium.js', `${CESIUM_CDN}/Cesium.js`)
+          .replace('/cesium/Cesium.js',           `${CESIUM_CDN}/Cesium.js`)
           .replace('/cesium/Widgets/widgets.css', `${CESIUM_CDN}/Widgets/widgets.css`)
-      },
-
-      // After vite-plugin-cesium finishes copying the Cesium asset tree,
-      // remove it — Workers, Assets, Widgets and ThirdParty are all served
-      // by the CDN; no local copy is needed inside the Pages deployment.
-      async closeBundle() {
-        await rm(path.resolve('dist', 'cesium'), { recursive: true, force: true })
-        console.log('[cesium-cdn-redirect] Removed dist/cesium — assets served from CDN')
       },
     },
   ].filter(Boolean),
